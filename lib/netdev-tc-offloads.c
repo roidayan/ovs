@@ -1328,6 +1328,13 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
             const struct nlattr *ct_attr;
             size_t ct_left;
 
+            /*
+             * OVS can assembly the fragmented packets and do CT actions,
+             * but TC doesn't support that currently. So return EOPNOTSUPP.
+             */
+            if (flower.key.flags & TCA_FLOWER_KEY_FLAGS_IS_FRAGMENT)
+                return EOPNOTSUPP;
+
             NL_ATTR_FOR_EACH_UNSAFE(ct_attr, ct_left, ct, ct_len) {
                 switch (nl_attr_type(ct_attr)) {
                     case OVS_CT_ATTR_COMMIT: {
