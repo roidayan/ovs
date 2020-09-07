@@ -17,8 +17,26 @@
 #ifndef DPIF_OFFLOAD_PROVIDER_H
 #define DPIF_OFFLOAD_PROVIDER_H
 
+#include "netlink-protocol.h"
+#include "openvswitch/packets.h"
+#include "openvswitch/types.h"
+
 struct dpif;
 struct dpif_offload_sflow;
+
+/* When offloading sample action, userspace creates a unique ID to map
+ * sFlow action and tunnel info and passes this ID to datapath instead
+ * of the sFlow info. Datapath will send this ID and sampled packet to
+ * userspace. Using the ID, userspace can recover the sFlow info and send
+ * sampled packet to the right sFlow monitoring host.
+ */
+struct dpif_sflow_attr {
+    const struct nlattr *action; /* sFlow action */
+    void *userdata;              /* struct user_action_cookie */
+    size_t userdata_len;         /* struct user_action_cookie length */
+    struct flow_tnl *tunnel;     /* tunnel info */
+    ovs_u128 ufid;               /* flow ufid */
+};
 
 struct dpif_offload_api {
     void (*init)(void);

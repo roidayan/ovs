@@ -138,6 +138,7 @@ int netdev_ports_flow_get(const char *dpif_type, struct match *match,
 int netdev_ports_get_n_flows(const char *dpif_type,
                              odp_port_t port_no, uint64_t *n_flows);
 
+const struct dpif_sflow_attr *dpif_offload_sflow_attr_find(uint32_t id);
 #ifdef  __cplusplus
 }
 #endif
