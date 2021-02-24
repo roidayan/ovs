@@ -48,6 +48,7 @@ static struct hmap ufid_to_tc = HMAP_INITIALIZER(&ufid_to_tc);
 static struct hmap tc_to_ufid = HMAP_INITIALIZER(&tc_to_ufid);
 static bool multi_mask_per_prio = false;
 static bool block_support = false;
+static uint16_t ct_state_support;
 
 struct netlink_field {
     int offset;
@@ -1709,6 +1710,10 @@ netdev_tc_flow_put(struct netdev *netdev, struct match *match,
     }
 
     if (mask->ct_state) {
+        if ((ct_state_support & mask->ct_state) != mask->ct_state) {
+            return -EOPNOTSUPP;
+        }
+
         if (mask->ct_state & OVS_CS_F_NEW) {
             if (key->ct_state & OVS_CS_F_NEW) {
                 flower.key.ct_state |= TCA_FLOWER_KEY_CT_FLAGS_NEW;
@@ -2029,6 +2034,96 @@ out:
     tc_add_del_qdisc(ifindex, false, block_id, TC_INGRESS);
 }
 
+
+static int
+probe_insert_ct_state_rule(int ifindex, uint16_t ct_state, struct tcf_id *id)
+{
+    int prio = TC_RESERVED_PRIORITY_MAX + 1;
+    struct tc_flower flower;
+
+    memset(&flower, 0, sizeof flower);
+    flower.key.ct_state = ct_state;
+    flower.mask.ct_state = ct_state;
+    flower.tc_policy = TC_POLICY_SKIP_HW;
+    flower.key.eth_type = htons(ETH_P_IP);
+    flower.mask.eth_type = OVS_BE16_MAX;
+
+    *id = tc_make_tcf_id(ifindex, 0, prio, TC_INGRESS);
+    return tc_replace_flower(id, &flower);
+}
+
+static void
+probe_ct_state_support(int ifindex)
+{
+    struct tc_flower flower;
+    uint16_t ct_state;
+    struct tcf_id id;
+    int error;
+
+    error = tc_add_del_qdisc(ifindex, true, 0, TC_INGRESS);
+    if (error) {
+        return;
+    }
+
+    /* Test for base ct_state match support */
+    ct_state = TCA_FLOWER_KEY_CT_FLAGS_NEW | TCA_FLOWER_KEY_CT_FLAGS_TRACKED;
+    error = probe_insert_ct_state_rule(ifindex, ct_state, &id);
+    if (error) {
+        goto out;
+    }
+
+    error = tc_get_flower(&id, &flower);
+    if (error || flower.mask.ct_state != ct_state) {
+        goto out_del;
+    }
+
+    tc_del_filter(&id);
+    ct_state_support = TCA_FLOWER_KEY_CT_FLAGS_NEW |
+                       TCA_FLOWER_KEY_CT_FLAGS_ESTABLISHED |
+                       TCA_FLOWER_KEY_CT_FLAGS_TRACKED |
+                       TCA_FLOWER_KEY_CT_FLAGS_RELATED;
+
+    /* Test for reject, ct_state >= MAX */
+    ct_state = ~0;
+    error = probe_insert_ct_state_rule(ifindex, ct_state, &id);
+    if (!error) {
+        /* No reject, can't continue probing other flags */
+        goto out_del;
+    }
+
+    tc_del_filter(&id);
+
+    /* Test for ct_state INVALID support */
+    memset(&flower, 0, sizeof flower);
+    ct_state = TCA_FLOWER_KEY_CT_FLAGS_TRACKED |
+               TCA_FLOWER_KEY_CT_FLAGS_INVALID;
+    error = probe_insert_ct_state_rule(ifindex, ct_state, &id);
+    if (error) {
+        goto out;
+    }
+
+    tc_del_filter(&id);
+    ct_state_support |= TCA_FLOWER_KEY_CT_FLAGS_INVALID;
+
+    /* Test for ct_state REPLY support */
+    memset(&flower, 0, sizeof flower);
+    ct_state = TCA_FLOWER_KEY_CT_FLAGS_TRACKED |
+               TCA_FLOWER_KEY_CT_FLAGS_ESTABLISHED |
+               TCA_FLOWER_KEY_CT_FLAGS_REPLY;
+    error = probe_insert_ct_state_rule(ifindex, ct_state, &id);
+    if (error) {
+        goto out;
+    }
+
+    ct_state_support |= TCA_FLOWER_KEY_CT_FLAGS_REPLY;
+
+out_del:
+    tc_del_filter(&id);
+out:
+    tc_add_del_qdisc(ifindex, false, 0, TC_INGRESS);
+    VLOG_INFO("probe tc: supported ct_state bits: 0x%x", ct_state_support);
+}
+
 static void
 probe_tc_block_support(int ifindex)
 {
@@ -2103,6 +2198,7 @@ netdev_tc_init_flow_api(struct netdev *netdev)
         block_id = get_block_id_from_netdev(netdev);
 
         probe_multi_mask_per_prio(ifindex);
+        probe_ct_state_support(ifindex);
         ovsthread_once_done(&once);
     }
 
