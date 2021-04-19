@@ -22,6 +22,7 @@
 #include "connmgr.h"
 #include "coverage.h"
 #include "cmap.h"
+#include "lib/dpif-offload-provider.h"
 #include "lib/dpif-provider.h"
 #include "dpif.h"
 #include "openvswitch/dynamic-string.h"
@@ -748,6 +749,51 @@ udpif_get_n_flows(struct udpif *udpif)
     return flow_count;
 }
 
+static void
+process_offload_sflow(struct udpif *udpif, struct dpif_offload_sflow *sflow)
+{
+    const struct dpif_sflow_attr *attr = sflow->attr;
+    struct user_action_cookie *cookie;
+    struct dpif_sflow *dpif_sflow;
+    struct ofproto_dpif *ofproto;
+    struct upcall upcall;
+    uint32_t iifindex;
+    struct flow flow;
+
+    if (!attr) {
+        VLOG_WARN_RL(&rl, "%s: dpif_sflow_attr is NULL", __func__);
+        return;
+    }
+
+    cookie = attr->userdata;
+    ofproto = ofproto_dpif_lookup_by_uuid(&cookie->ofproto_uuid);
+    if (!ofproto) {
+        VLOG_WARN_RL(&rl, "%s: could not find ofproto", __func__);
+        return;
+    }
+
+    dpif_sflow = ofproto->sflow;
+    if (!sflow) {
+        VLOG_WARN_RL(&rl, "%s: could not find dpif_sflow", __func__);
+        return;
+    }
+
+    memset(&flow, 0, sizeof flow);
+    if (attr->tunnel) {
+        memcpy(&flow.tunnel, attr->tunnel, sizeof flow.tunnel);
+    }
+    iifindex = sflow->iifindex;
+    flow.in_port.odp_port = netdev_ifindex_to_odp_port(iifindex);
+    memset(&upcall, 0, sizeof upcall);
+    upcall.flow = &flow;
+    upcall.cookie = *cookie;
+    upcall.packet = &sflow->packet;
+    upcall.sflow = dpif_sflow;
+    upcall.ufid = &sflow->attr->ufid;
+    upcall.type = SFLOW_UPCALL;
+    process_upcall(udpif, &upcall, NULL, NULL);
+}
+
 /* The upcall handler thread tries to read a batch of UPCALL_MAX_BATCH
  * upcalls from dpif, processes the batch and installs corresponding flows
  * in dpif. */
@@ -762,7 +808,18 @@ udpif_upcall_handler(void *arg)
             poll_immediate_wake();
         } else {
             dpif_recv_wait(udpif->dpif, handler->handler_id);
+            dpif_offload_sflow_recv_wait(udpif->dpif);
             latch_wait(&udpif->exit_latch);
+        }
+        /* Only handler id 0 thread process sFlow offload packet. */
+        if (handler->handler_id == 0) {
+            struct dpif_offload_sflow sflow;
+            int err;
+
+            err = dpif_offload_sflow_recv(udpif->dpif, &sflow);
+            if (!err) {
+                process_offload_sflow(udpif, &sflow);
+            }
         }
         poll_block();
     }
