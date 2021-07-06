@@ -50,6 +50,7 @@ Post-v2.15.0
    - OVS now reports the datapath capability 'ct_zero_snat', which reflects
      whether the SNAT with all-zero IP address is supported.
      See ovs-vswitchd.conf.db(5) for details.
+   - Add sFlow offload support for kernel (netlink) datapath.
 
 
 v2.15.0 - 15 Feb 2021
