@@ -22,8 +22,9 @@
  * exposed over OpenFlow as a single switch.  Datapaths and the collections of
  * ports that they contain may be fixed or dynamic. */
 
-#include "openflow/openflow.h"
 #include "dpif.h"
+#include "dpif-offload-provider.h"
+#include "openflow/openflow.h"
 #include "util.h"
 
 #ifdef  __cplusplus
@@ -633,6 +634,11 @@ struct dpif_class {
      * sufficient to store BOND_BUCKETS number of elements. */
     int (*bond_stats_get)(struct dpif *dpif, uint32_t bond_id,
                           uint64_t *n_bytes);
+
+    /* Some offload actions require functionality that is not netdev based,
+     * but dpif. Add dpif-offload-provider layer API to support such
+     * offload actions. */
+    const struct dpif_offload_api *offload_api;
 };
 
 extern const struct dpif_class dpif_netlink_class;
