@@ -4037,7 +4037,7 @@ const struct dpif_class dpif_netlink_class = {
     NULL,                       /* bond_add */
     NULL,                       /* bond_del */
     NULL,                       /* bond_stats_get */
-    NULL,                       /* dpif_offlod_api */
+    &dpif_offload_netlink,
 };
 
 static int

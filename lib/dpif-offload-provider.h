@@ -17,6 +17,7 @@
 #ifndef DPIF_OFFLOAD_PROVIDER_H
 #define DPIF_OFFLOAD_PROVIDER_H
 
+#include "dp-packet.h"
 #include "netlink-protocol.h"
 #include "openvswitch/packets.h"
 #include "openvswitch/types.h"
@@ -38,6 +39,13 @@ struct dpif_sflow_attr {
     ovs_u128 ufid;               /* flow ufid */
 };
 
+/* Parse the specific dpif message to sFlow. So OVS can process it. */
+struct dpif_offload_sflow {
+    struct dp_packet packet;    /* packet data */
+    uint32_t iifindex;          /* input ifindex */
+    const struct dpif_sflow_attr *attr;
+};
+
 struct dpif_offload_api {
     void (*init)(void);
     void (*uninit)(void);
@@ -48,5 +56,9 @@ struct dpif_offload_api {
 void dpif_offload_sflow_recv_wait(const struct dpif *dpif);
 int dpif_offload_sflow_recv(const struct dpif *dpif,
                             struct dpif_offload_sflow *sflow);
+
+#ifdef __linux__
+extern const struct dpif_offload_api dpif_offload_netlink;
+#endif
 
 #endif /* DPIF_OFFLOAD_PROVIDER_H */
