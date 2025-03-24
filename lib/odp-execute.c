@@ -53,6 +53,10 @@ COVERAGE_DEFINE(drop_action_no_recirculation_context);
 COVERAGE_DEFINE(drop_action_recirculation_conflict);
 COVERAGE_DEFINE(drop_action_too_many_mpls_labels);
 COVERAGE_DEFINE(drop_action_invalid_tunnel_metadata);
+COVERAGE_DEFINE(drop_action_tunnel_routing_failed);
+COVERAGE_DEFINE(drop_action_tunnel_output_no_ethernet);
+COVERAGE_DEFINE(drop_action_tunnel_neigh_cache_miss);
+COVERAGE_DEFINE(drop_action_tunnel_header_build_failed);
 COVERAGE_DEFINE(drop_action_unsupported_packet_type);
 COVERAGE_DEFINE(drop_action_congestion);
 COVERAGE_DEFINE(drop_action_forwarding_disabled);
@@ -90,6 +94,18 @@ dp_update_drop_action_counter(enum xlate_error drop_reason,
         break;
    case XLATE_INVALID_TUNNEL_METADATA:
         COVERAGE_ADD(drop_action_invalid_tunnel_metadata, delta);
+        break;
+   case XLATE_TUNNEL_ROUTING_FAILED:
+        COVERAGE_ADD(drop_action_tunnel_routing_failed, delta);
+        break;
+   case XLATE_TUNNEL_OUTPUT_NO_ETHERNET:
+        COVERAGE_ADD(drop_action_tunnel_output_no_ethernet, delta);
+        break;
+   case XLATE_TUNNEL_NEIGH_CACHE_MISS:
+        COVERAGE_ADD(drop_action_tunnel_neigh_cache_miss, delta);
+        break;
+   case XLATE_TUNNEL_HEADER_BUILD_FAILED:
+        COVERAGE_ADD(drop_action_tunnel_header_build_failed, delta);
         break;
    case XLATE_UNSUPPORTED_PACKET_TYPE:
         COVERAGE_ADD(drop_action_unsupported_packet_type, delta);
