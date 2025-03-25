@@ -1937,16 +1937,6 @@ dpif_is_recheck_support_needed(const struct dpif *dpif)
            dpif->dpif_class->recheck_support_needed(dpif) : false;
 }
 
-bool
-dpif_supports_lb_output_action(const struct dpif *dpif)
-{
-    /*
-     * Balance-tcp optimization is currently supported in netdev
-     * datapath only.
-     */
-    return dpif_is_netdev(dpif);
-}
-
 /* Meters */
 void
 dpif_meter_get_features(const struct dpif *dpif,

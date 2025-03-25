@@ -1432,6 +1432,41 @@ check_tnl_pop_action(struct dpif_backer *backer)
     return supported;
 }
 
+/* Tests whether backer's datapath supports the
+ * OVS_ACTION_ATTR_LB_OUTPUT action. */
+static bool
+check_lb_output_action(struct dpif_backer *backer)
+{
+    uint8_t actbuf[NL_A_U32_SIZE];
+    struct odputil_keybuf keybuf;
+    struct ofpbuf actions;
+    struct ofpbuf key;
+    bool supported;
+
+    struct flow flow = {
+        .dl_type = CONSTANT_HTONS(0x1234), /* bogus */
+    };
+    struct odp_flow_key_parms odp_parms = {
+        .flow = &flow,
+        .probe = true,
+    };
+
+    ofpbuf_use_stack(&key, &keybuf, sizeof keybuf);
+    odp_flow_key_from_flow(&odp_parms, &key);
+
+    ofpbuf_use_stack(&actions, &actbuf, sizeof actbuf);
+    nl_msg_put_u32(&actions, OVS_ACTION_ATTR_LB_OUTPUT, 0);
+
+    supported = dpif_probe_feature(backer->dpif, "lb_output", &key, &actions,
+                                   NULL);
+
+    VLOG_INFO("%s: Datapath %s lb_output action",
+              dpif_name(backer->dpif),
+              (supported) ? "supports" : "does not support");
+
+    return supported;
+}
+
 /* Tests whether backer's datapath supports the OVS_ACTION_ATTR_DROP action. */
 static bool
 check_drop_action(struct dpif_backer *backer)
@@ -1776,8 +1811,7 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.ct_timeout = check_ct_timeout_policy(backer);
     atomic_store_relaxed(&backer->rt_support.explicit_drop_action,
                          check_drop_action(backer));
-    backer->rt_support.lb_output_action =
-        dpif_supports_lb_output_action(backer->dpif);
+    backer->rt_support.lb_output_action = check_lb_output_action(backer);
     backer->rt_support.ct_zero_snat = dpif_supports_ct_zero_snat(backer);
     backer->rt_support.add_mpls = check_add_mpls(backer);
     backer->rt_support.psample = check_psample(backer);

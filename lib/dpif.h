@@ -917,7 +917,6 @@ int dpif_meter_del(struct dpif *, ofproto_meter_id meter_id,
 int dpif_bond_add(struct dpif *, uint32_t bond_id, odp_port_t *member_map);
 int dpif_bond_del(struct dpif *, uint32_t bond_id);
 int dpif_bond_stats_get(struct dpif *, uint32_t bond_id, uint64_t *n_bytes);
-bool dpif_supports_lb_output_action(const struct dpif *);
 
 
 /* Cache */
