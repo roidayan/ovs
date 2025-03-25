@@ -4307,6 +4307,67 @@ exit:
     return error;
 }
 
+static bool
+dpif_netdev_actions_supported(const struct nlattr *actions, size_t actions_len)
+{
+    const struct nlattr *nla;
+    size_t left;
+
+    if (!actions_len) {
+        return true;
+    }
+
+    NL_ATTR_FOR_EACH (nla, left, actions, actions_len) {
+        enum ovs_action_attr type = nl_attr_type(nla);
+
+        switch (type) {
+        /* Supported actions go here in order of definition. */
+        case OVS_ACTION_ATTR_OUTPUT:
+        case OVS_ACTION_ATTR_USERSPACE:
+        case OVS_ACTION_ATTR_SET:
+        case OVS_ACTION_ATTR_PUSH_VLAN:
+        case OVS_ACTION_ATTR_POP_VLAN:
+        case OVS_ACTION_ATTR_SAMPLE:
+        case OVS_ACTION_ATTR_RECIRC:
+        case OVS_ACTION_ATTR_HASH:
+        case OVS_ACTION_ATTR_PUSH_MPLS:
+        case OVS_ACTION_ATTR_POP_MPLS:
+        case OVS_ACTION_ATTR_SET_MASKED:
+        case OVS_ACTION_ATTR_CT:
+        case OVS_ACTION_ATTR_TRUNC:
+        case OVS_ACTION_ATTR_PUSH_ETH:
+        case OVS_ACTION_ATTR_POP_ETH:
+        case OVS_ACTION_ATTR_CT_CLEAR:
+        case OVS_ACTION_ATTR_PUSH_NSH:
+        case OVS_ACTION_ATTR_POP_NSH:
+        case OVS_ACTION_ATTR_METER:
+        case OVS_ACTION_ATTR_CLONE:
+        case OVS_ACTION_ATTR_CHECK_PKT_LEN:
+        case OVS_ACTION_ATTR_ADD_MPLS:
+        case OVS_ACTION_ATTR_DEC_TTL:
+        case OVS_ACTION_ATTR_DROP:
+        case OVS_ACTION_ATTR_TUNNEL_PUSH:
+        case OVS_ACTION_ATTR_TUNNEL_POP:
+        case OVS_ACTION_ATTR_LB_OUTPUT:
+            if (nla->nla_type & NLA_F_NESTED) {
+                return dpif_netdev_actions_supported(nl_attr_get(nla),
+                                                     nl_attr_get_size(nla));
+            } else {
+                return true;
+            }
+
+        /* Unsupported actions go here in order of definition. */
+        case OVS_ACTION_ATTR_PSAMPLE:
+            break;
+
+        case OVS_ACTION_ATTR_UNSPEC:
+        case __OVS_ACTION_ATTR_MAX:
+            OVS_NOT_REACHED();
+        }
+    }
+    return false;
+}
+
 static int
 dpif_netdev_flow_put(struct dpif *dpif, const struct dpif_flow_put *put)
 {
@@ -4366,6 +4427,13 @@ dpif_netdev_flow_put(struct dpif *dpif, const struct dpif_flow_put *put)
      * fields are interpreted as zeros, they could falsely match a wider IP
      * address mask. Installation of the flow will use the match variable. */
     netdev_flow_key_init(&key, &match.flow);
+
+    /* For probe operations, verify if the individual actions are supported.
+     * Otherwise, assume the higher layer, ofproto, manages action support. */
+    if (probe && !dpif_netdev_actions_supported(put->actions,
+                                                put->actions_len)) {
+        return EINVAL;
+    }
 
     if (put->pmd_id == PMD_ID_NULL) {
         if (cmap_count(&dp->poll_threads) == 0) {
