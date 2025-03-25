@@ -995,6 +995,12 @@ odp_execute_init(void)
     }
 }
 
+bool
+odp_execute_without_datapath_assistance(const struct nlattr *a)
+{
+    return !requires_datapath_assistance(a);
+}
+
 /* Executes all of the 'actions_len' bytes of datapath actions in 'actions' on
  * the packets in 'batch'.  If 'steal' is true, possibly modifies and
  * definitely free the packets in 'batch', otherwise leaves 'batch' unchanged.

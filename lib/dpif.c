@@ -1937,10 +1937,10 @@ dpif_supports_tnl_push_pop(const struct dpif *dpif)
 }
 
 bool
-dpif_may_support_explicit_drop_action(const struct dpif *dpif)
+dpif_is_recheck_support_needed(const struct dpif *dpif)
 {
-    /* TC does not support offloading this action. */
-    return dpif_is_netdev(dpif) || !netdev_is_flow_api_enabled();
+    return dpif->dpif_class->recheck_support_needed ?
+           dpif->dpif_class->recheck_support_needed(dpif) : false;
 }
 
 bool

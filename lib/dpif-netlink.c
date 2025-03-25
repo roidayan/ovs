@@ -756,6 +756,21 @@ dpif_netlink_run(struct dpif *dpif_)
     return false;
 }
 
+static bool
+dpif_netlink_recheck_support_needed(const struct dpif *dpif_ OVS_UNUSED)
+{
+    static struct ovsthread_once once = OVSTHREAD_ONCE_INITIALIZER;
+    bool reconfigure = false;
+
+    if (netdev_is_flow_api_enabled()) {
+        if (ovsthread_once_start(&once)) {
+            reconfigure = true;
+            ovsthread_once_done(&once);
+        }
+    }
+    return reconfigure;
+}
+
 static int
 dpif_netlink_get_stats(const struct dpif *dpif_, struct dpif_dp_stats *stats)
 {
@@ -2425,6 +2440,28 @@ dpif_netlink_operate_chunks(struct dpif_netlink *dpif, struct dpif_op **ops,
     }
 }
 
+static bool
+dpif_netlink_is_explicit_drop_probe(struct dpif_op *op)
+{
+    struct dpif_flow_put *put = &op->flow_put;
+    const struct nlattr *nla;
+    size_t left;
+
+    if (!(op->type == DPIF_OP_FLOW_PUT &&
+        (op->flow_put.flags & DPIF_FP_PROBE))) {
+        return false;
+    }
+
+    NL_ATTR_FOR_EACH (nla, left, put->actions, put->actions_len) {
+        if (nl_attr_type(nla) == OVS_ACTION_ATTR_DROP) {
+            return true;
+        }
+        break;
+    }
+
+    return false;
+}
+
 static void
 dpif_netlink_operate(struct dpif *dpif_, struct dpif_op **ops, size_t n_ops,
                      enum dpif_offload_type offload_type)
@@ -2448,7 +2485,15 @@ dpif_netlink_operate(struct dpif *dpif_, struct dpif_op **ops, size_t n_ops,
                 struct dpif_op *op = ops[i++];
 
                 err = try_send_to_netdev(dpif, op);
-                if (err && err != EEXIST) {
+                /* TC does not support probing, always returns EOPNOTSUPP and
+                 * falls back to kernel openvswitch.
+                 * Explicit drop is supported in kernel openvswitch but not
+                 * in TC so fail it here because flow api is enabled.
+                 */
+                if (err == EOPNOTSUPP &&
+                    dpif_netlink_is_explicit_drop_probe(op)) {
+                    op->error = EINVAL;
+                } else if (err && err != EEXIST) {
                     if (offload_type == DPIF_OFFLOAD_ALWAYS) {
                         /* We got an error while offloading an op. Since
                          * OFFLOAD_ALWAYS is specified, we stop further
@@ -4579,6 +4624,7 @@ const struct dpif_class dpif_netlink_class = {
     dpif_netlink_cache_get_name,
     dpif_netlink_cache_get_size,
     dpif_netlink_cache_set_size,
+    dpif_netlink_recheck_support_needed,
 };
 
 static int

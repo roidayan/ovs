@@ -4323,49 +4323,60 @@ dpif_netdev_actions_supported(const struct nlattr *actions, size_t actions_len)
         switch (type) {
         /* Supported actions go here in order of definition. */
         case OVS_ACTION_ATTR_OUTPUT:
+        case OVS_ACTION_ATTR_LB_OUTPUT:
+        case OVS_ACTION_ATTR_TUNNEL_PUSH:
+        case OVS_ACTION_ATTR_TUNNEL_POP:
         case OVS_ACTION_ATTR_USERSPACE:
+        case OVS_ACTION_ATTR_RECIRC:
+        case OVS_ACTION_ATTR_CT:
+        case OVS_ACTION_ATTR_METER:
+            if (nla->nla_type & NLA_F_NESTED &&
+                !dpif_netdev_actions_supported(nl_attr_get(nla),
+                                               nl_attr_get_size(nla))) {
+                return false;
+            }
+            break;
+            ;;
         case OVS_ACTION_ATTR_SET:
         case OVS_ACTION_ATTR_PUSH_VLAN:
         case OVS_ACTION_ATTR_POP_VLAN:
         case OVS_ACTION_ATTR_SAMPLE:
-        case OVS_ACTION_ATTR_RECIRC:
         case OVS_ACTION_ATTR_HASH:
         case OVS_ACTION_ATTR_PUSH_MPLS:
         case OVS_ACTION_ATTR_POP_MPLS:
         case OVS_ACTION_ATTR_SET_MASKED:
-        case OVS_ACTION_ATTR_CT:
         case OVS_ACTION_ATTR_TRUNC:
         case OVS_ACTION_ATTR_PUSH_ETH:
         case OVS_ACTION_ATTR_POP_ETH:
         case OVS_ACTION_ATTR_CT_CLEAR:
         case OVS_ACTION_ATTR_PUSH_NSH:
         case OVS_ACTION_ATTR_POP_NSH:
-        case OVS_ACTION_ATTR_METER:
         case OVS_ACTION_ATTR_CLONE:
         case OVS_ACTION_ATTR_CHECK_PKT_LEN:
         case OVS_ACTION_ATTR_ADD_MPLS:
         case OVS_ACTION_ATTR_DEC_TTL:
         case OVS_ACTION_ATTR_DROP:
-        case OVS_ACTION_ATTR_TUNNEL_PUSH:
-        case OVS_ACTION_ATTR_TUNNEL_POP:
-        case OVS_ACTION_ATTR_LB_OUTPUT:
-            if (nla->nla_type & NLA_F_NESTED) {
-                return dpif_netdev_actions_supported(nl_attr_get(nla),
-                                                     nl_attr_get_size(nla));
-            } else {
-                return true;
+            if (!odp_execute_without_datapath_assistance(nla)) {
+                return false;
             }
+
+            if (nla->nla_type & NLA_F_NESTED &&
+                !dpif_netdev_actions_supported(nl_attr_get(nla),
+                                               nl_attr_get_size(nla))) {
+                return false;
+            }
+            break;
 
         /* Unsupported actions go here in order of definition. */
         case OVS_ACTION_ATTR_PSAMPLE:
-            break;
+            return false;
 
         case OVS_ACTION_ATTR_UNSPEC:
         case __OVS_ACTION_ATTR_MAX:
             OVS_NOT_REACHED();
         }
     }
-    return false;
+    return true;
 }
 
 static int
@@ -10125,6 +10136,7 @@ const struct dpif_class dpif_netdev_class = {
     NULL,                       /* cache_get_name */
     NULL,                       /* cache_get_size */
     NULL,                       /* cache_set_size */
+    NULL,                       /* recheck_support_needed */
 };
 
 static void

@@ -683,6 +683,9 @@ struct dpif_class {
 
     /* Set cache size. */
     int (*cache_set_size)(struct dpif *dpif, uint32_t level, uint32_t size);
+
+    /* If 'true' recheck support of actions and attributes. */
+    bool (*recheck_support_needed)(const struct dpif *dpif);
 };
 
 extern const struct dpif_class dpif_netlink_class;

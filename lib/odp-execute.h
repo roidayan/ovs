@@ -38,6 +38,8 @@ typedef void (*odp_execute_action_cb)(struct dp_packet_batch *batch,
 typedef void (*odp_execute_cb)(void *dp, struct dp_packet_batch *batch,
                                const struct nlattr *action, bool should_steal);
 
+bool odp_execute_without_datapath_assistance(const struct nlattr *a);
+
 /* Actions that need to be executed in the context of a datapath are handed
  * to 'dp_execute_action', if non-NULL.  Currently this is called only for
  * actions OVS_ACTION_ATTR_OUTPUT and OVS_ACTION_ATTR_USERSPACE so
