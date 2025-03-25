@@ -1646,8 +1646,8 @@ check_psample(struct dpif_backer *backer)
 
     odp_put_psample_action(&actions, 10, cookie, sizeof cookie);
 
-    supported = dpif_may_support_psample(backer->dpif) &&
-        dpif_probe_feature(backer->dpif, "psample", &key, &actions, NULL);
+    supported = dpif_probe_feature(backer->dpif, "psample", &key, &actions,
+                                   NULL);
 
     ofpbuf_uninit(&actions);
     VLOG_INFO("%s: Datapath %s psample action", dpif_name(backer->dpif),
