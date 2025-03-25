@@ -1931,12 +1931,6 @@ log_flow_get_message(const struct dpif *dpif,
 }
 
 bool
-dpif_supports_tnl_push_pop(const struct dpif *dpif)
-{
-    return dpif_is_netdev(dpif);
-}
-
-bool
 dpif_is_recheck_support_needed(const struct dpif *dpif)
 {
     return dpif->dpif_class->recheck_support_needed ?

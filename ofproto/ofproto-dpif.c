@@ -1397,6 +1397,41 @@ check_ct_timeout_policy(struct dpif_backer *backer)
     return !error;
 }
 
+/* Tests whether backer's datapath supports the
+ * OVS_ACTION_ATTR_TUNNEL_POP action. */
+static bool
+check_tnl_pop_action(struct dpif_backer *backer)
+{
+    uint8_t actbuf[NL_A_U32_SIZE];
+    struct odputil_keybuf keybuf;
+    struct ofpbuf actions;
+    struct ofpbuf key;
+    bool supported;
+
+    struct flow flow = {
+        .dl_type = CONSTANT_HTONS(0x1234), /* bogus */
+    };
+    struct odp_flow_key_parms odp_parms = {
+        .flow = &flow,
+        .probe = true,
+    };
+
+    ofpbuf_use_stack(&key, &keybuf, sizeof keybuf);
+    odp_flow_key_from_flow(&odp_parms, &key);
+
+    ofpbuf_use_stack(&actions, &actbuf, sizeof actbuf);
+    nl_msg_put_u32(&actions, OVS_ACTION_ATTR_TUNNEL_POP, 0x1234);
+
+    supported = dpif_probe_feature(backer->dpif, "tunnel_pop", &key, &actions,
+                                   NULL);
+
+    VLOG_INFO("%s: Datapath %s tunnel_pop action",
+              dpif_name(backer->dpif),
+              (supported) ? "supports" : "does not support");
+
+    return supported;
+}
+
 /* Tests whether backer's datapath supports the OVS_ACTION_ATTR_DROP action. */
 static bool
 check_drop_action(struct dpif_backer *backer)
@@ -1731,7 +1766,7 @@ check_support(struct dpif_backer *backer)
     backer->rt_support.masked_set_action = check_masked_set_action(backer);
     backer->rt_support.trunc = check_trunc_action(backer);
     backer->rt_support.ufid = check_ufid(backer);
-    backer->rt_support.tnl_push_pop = dpif_supports_tnl_push_pop(backer->dpif);
+    backer->rt_support.tnl_push_pop = check_tnl_pop_action(backer);
     backer->rt_support.clone = check_clone(backer);
     backer->rt_support.sample_nesting = check_max_sample_nesting(backer);
     backer->rt_support.ct_eventmask = check_ct_eventmask(backer);
