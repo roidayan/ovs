@@ -33,8 +33,6 @@ extern "C" {
  * headers to be aligned on a 4-byte boundary.  */
 enum { DP_NETDEV_HEADROOM = 2 + VLAN_HEADER_LEN };
 
-bool dpif_is_netdev(const struct dpif *);
-
 #define NR_QUEUE   1
 #define NR_PMD_THREADS 1
 

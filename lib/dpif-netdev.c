@@ -685,7 +685,7 @@ pmd_thread_ctx_time_update(struct dp_netdev_pmd_thread *pmd)
 }
 
 /* Returns true if 'dpif' is a netdev or dummy dpif, false otherwise. */
-bool
+static bool
 dpif_is_netdev(const struct dpif *dpif)
 {
     return dpif->dpif_class->open == dpif_netdev_open;
