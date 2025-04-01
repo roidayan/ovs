@@ -933,7 +933,8 @@ bridge_reconfigure(const struct ovsrec_open_vswitch *ovs_cfg)
         if (!br->ofproto) {
             int error;
 
-            error = ofproto_create(br->name, br->type, &br->ofproto);
+            error = ofproto_create(br->name, br->type, &ovs_cfg->other_config,
+                                   &br->ofproto);
             if (error) {
                 VLOG_ERR("failed to create bridge %s: %s", br->name,
                          ovs_strerror(error));

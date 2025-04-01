@@ -481,7 +481,7 @@ ofproto_bump_tables_version(struct ofproto *ofproto)
 
 int
 ofproto_create(const char *datapath_name, const char *datapath_type,
-               struct ofproto **ofprotop)
+               const struct smap *other_config, struct ofproto **ofprotop)
     OVS_EXCLUDED(ofproto_mutex)
 {
     const struct ofproto_class *class;
@@ -588,6 +588,9 @@ ofproto_create(const char *datapath_name, const char *datapath_type,
     hmap_init(&ofproto->meters);
     ofproto->slowpath_meter_id = UINT32_MAX;
     ofproto->controller_meter_id = UINT32_MAX;
+
+    ofproto->disable_ports_trie = smap_get_bool(other_config,
+                                                "disable-ports-trie", false);
 
     /* Set the initial tables version. */
     ofproto_bump_tables_version(ofproto);

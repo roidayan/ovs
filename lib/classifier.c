@@ -116,7 +116,8 @@ static const struct cls_match *find_match_wc(const struct cls_subtable *,
                                              const struct flow *,
                                              struct trie_ctx *,
                                              unsigned int n_tries,
-                                             struct flow_wildcards *);
+                                             struct flow_wildcards *,
+                                             bool disable_ports_trie);
 static struct cls_match *find_equal(const struct cls_subtable *,
                                     const struct miniflow *, uint32_t hash);
 
@@ -971,7 +972,8 @@ static const struct cls_rule *
 classifier_lookup__(const struct classifier *cls, ovs_version_t version,
                     struct flow *flow, struct flow_wildcards *wc,
                     bool allow_conjunctive_matches,
-                    struct hmapx *conj_flows)
+                    struct hmapx *conj_flows,
+                    bool disable_ports_trie)
 {
     struct trie_ctx trie_ctx[CLS_MAX_TRIES];
     const struct cls_match *match;
@@ -1007,7 +1009,7 @@ classifier_lookup__(const struct classifier *cls, ovs_version_t version,
         /* Skip subtables with no match, or where the match is lower-priority
          * than some certain match we've already found. */
         match = find_match_wc(subtable, version, flow, trie_ctx, cls->n_tries,
-                              wc);
+                              wc, disable_ports_trie);
         if (!match || match->priority <= hard_pri) {
             continue;
         }
@@ -1132,7 +1134,7 @@ classifier_lookup__(const struct classifier *cls, ovs_version_t version,
 
                 flow->conj_id = id;
                 rule = classifier_lookup__(cls, version, flow, wc, false,
-                                           NULL);
+                                           NULL, disable_ports_trie);
                 flow->conj_id = saved_conj_id;
 
                 if (rule) {
@@ -1207,9 +1209,11 @@ classifier_lookup__(const struct classifier *cls, ovs_version_t version,
 const struct cls_rule *
 classifier_lookup(const struct classifier *cls, ovs_version_t version,
                   struct flow *flow, struct flow_wildcards *wc,
-                  struct hmapx *conj_flows)
+                  struct hmapx *conj_flows,
+                  bool disable_ports_trie)
 {
-    return classifier_lookup__(cls, version, flow, wc, true, conj_flows);
+    return classifier_lookup__(cls, version, flow, wc, true, conj_flows,
+                               disable_ports_trie);
 }
 
 /* Finds and returns a rule in 'cls' with exactly the same priority and
@@ -1727,7 +1731,8 @@ find_match(const struct cls_subtable *subtable, ovs_version_t version,
 static const struct cls_match *
 find_match_wc(const struct cls_subtable *subtable, ovs_version_t version,
               const struct flow *flow, struct trie_ctx *trie_ctx,
-              unsigned int n_tries, struct flow_wildcards *wc)
+              unsigned int n_tries, struct flow_wildcards *wc,
+              bool disable_ports_trie)
 {
     if (OVS_UNLIKELY(!wc)) {
         return find_match(subtable, version, flow,
@@ -1774,7 +1779,7 @@ find_match_wc(const struct cls_subtable *subtable, ovs_version_t version,
                                        subtable->index_maps[i],
                                        &mask_offset, &basis);
     rule = find_match(subtable, version, flow, hash);
-    if (!rule && subtable->ports_mask_len) {
+    if (!rule && subtable->ports_mask_len && !disable_ports_trie) {
         /* The final stage had ports, but there was no match.  Instead of
          * unwildcarding all the ports bits, use the ports trie to figure out a
          * smaller set of bits to unwildcard. */

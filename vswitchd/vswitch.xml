@@ -176,6 +176,24 @@
         </p>
       </column>
 
+      <column name="other_config" key="disable-ports-trie"
+              type='{"type": "boolean"}'>
+        <p>
+          Set this value to <code>true</code> to disable transport ports prefix
+          tree optimization.
+        </p>
+        <p>
+          The default value is <code>false</code>. Changing this value requires
+          restarting the daemon.
+        </p>
+        <p>
+          The default behavior tries to optimize transport ports wildcards,
+          to get less datapath flows. The down side of it that those flows
+          are distributed accross multiple match templates, which is
+          problematic for HW offloads.
+        </p>
+    </column>
+
       <column name="other_config" key="max-idle"
               type='{"type": "integer", "minInteger": 500}'>
         <p>

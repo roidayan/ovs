@@ -4587,9 +4587,12 @@ rule_dpif_lookup_in_table(struct ofproto_dpif *ofproto, ovs_version_t version,
                           struct hmapx *conj_flows)
 {
     struct classifier *cls = &ofproto->up.tables[table_id].cls;
-    return rule_dpif_cast(rule_from_cls_rule(classifier_lookup(cls, version,
-                                                               flow, wc,
-                                                               conj_flows)));
+    bool disable_ports_trie = ofproto->up.disable_ports_trie;
+    const struct cls_rule *cr;
+
+    cr = classifier_lookup(cls, version, flow, wc, conj_flows,
+                           disable_ports_trie);
+    return rule_dpif_cast(rule_from_cls_rule(cr));
 }
 
 void
