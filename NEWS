@@ -5,6 +5,8 @@ Post-v3.5.0
    - ovs-ctl:
      * Added a new option, --oom-score=<score>, to set the daemons' Linux
        Out-Of-Memory (OOM) killer score.
+    * Added a new option, --ulimit-core=<LIMIT>, to set the daemon's ulimit
+      core file size.
    - SSL/TLS:
      * Support for deprecated TLSv1 and TLSv1.1 protocols on OpenFlow and
        database connections is now removed.
