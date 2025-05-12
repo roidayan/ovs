@@ -1762,6 +1762,10 @@ common_destruct(struct netdev_dpdk *dev)
 
 static void dpdk_rx_steer_unconfigure(struct netdev_dpdk *);
 
+static int
+dpdk_eth_event_callback(dpdk_port_t port_id, enum rte_eth_event_type type,
+                        void *param OVS_UNUSED, void *ret_param OVS_UNUSED);
+
 static void
 netdev_dpdk_destruct(struct netdev *netdev)
 {
@@ -1830,6 +1834,10 @@ netdev_dpdk_destruct(struct netdev *netdev)
             VLOG_INFO("Device '%s' has been removed", dev->devargs);
         }
     }
+
+    rte_eth_dev_callback_unregister(RTE_ETH_ALL,
+                                    RTE_ETH_EVENT_INTR_RESET,
+                                    dpdk_eth_event_callback, NULL);
 
     netdev_dpdk_clear_xstats(dev);
     free(dev->devargs);
