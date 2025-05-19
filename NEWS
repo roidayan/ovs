@@ -16,6 +16,7 @@ Post-v3.5.0
      * Added JSON output support to the 'ovs/route/show' command.
      * 'ovs/route/show': added new option, table=[ID|all], to list routes from
        a specific OVS table or all routes from all tables.
+     * Added a new sub-command, ovs/rule/show, to list OVS router rules.
    - SSL/TLS:
      * Support for deprecated TLSv1 and TLSv1.1 protocols on OpenFlow and
        database connections is now removed.

@@ -826,6 +826,77 @@ ovs_router_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
 }
 
 static void
+ovs_rules_show_json(struct json *rule_entries)
+{
+    struct router_rule *rule;
+    struct ds ds;
+
+    RCULIST_FOR_EACH (rule, node, &rules.node) {
+        struct json *entry = json_object_create();
+
+        json_object_put(entry, "priority", json_integer_create(rule->prio));
+        json_object_put(entry, "invert", json_boolean_create(rule->invert));
+        json_object_put(entry, "src_len", json_integer_create(rule->src_len));
+        json_object_put(entry, "lookup",
+                        json_integer_create(rule->lookup_table));
+
+        if (rule->src_len) {
+            ds_init(&ds);
+            ipv6_format_mapped(&rule->from_addr, &ds);
+            json_object_put_string(entry, "from", ds_cstr_ro(&ds));
+            ds_destroy(&ds);
+        } else {
+            json_object_put_string(entry, "from", "all");
+        }
+
+        json_array_add(rule_entries, entry);
+    }
+}
+
+static void
+ovs_rules_show_text(struct ds *ds)
+{
+    struct router_rule *rule;
+
+    RCULIST_FOR_EACH (rule, node, &rules.node) {
+        ds_put_format(ds, "%u: ", rule->prio);
+        if (rule->invert) {
+            ds_put_format(ds, "not ");
+        }
+        ds_put_format(ds, "from ");
+        if (rule->src_len) {
+            ipv6_format_mapped(&rule->from_addr, ds);
+            if (!((IN6_IS_ADDR_V4MAPPED(&rule->from_addr) &&
+                   rule->src_len == 32) || rule->src_len == 128)) {
+                ds_put_format(ds, "/%u ", rule->src_len);
+            }
+        } else {
+            ds_put_cstr(ds, "all");
+        }
+        ds_put_format(ds, " ");
+        ds_put_format(ds, "lookup %u\n", rule->lookup_table);
+    }
+}
+
+static void
+ovs_rules_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
+               const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
+{
+    if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
+        struct json *entries = json_array_create_empty();
+
+        ovs_rules_show_json(entries);
+        unixctl_command_reply_json(conn, entries);
+    } else {
+        struct ds ds = DS_EMPTY_INITIALIZER;
+
+        ovs_rules_show_text(&ds);
+        unixctl_command_reply(conn, ds_cstr(&ds));
+        ds_destroy(&ds);
+    }
+}
+
+static void
 ovs_router_lookup_cmd(struct unixctl_conn *conn, int argc,
                       const char *argv[], void *aux OVS_UNUSED)
 {
@@ -966,6 +1037,8 @@ ovs_router_init(void)
         unixctl_command_register("ovs/route/lookup", "ip_addr "
                                  "[pkt_mark=mark]", 1, 2,
                                  ovs_router_lookup_cmd, NULL);
+        unixctl_command_register("ovs/rule/show", "", 0, 0,
+                                 ovs_rules_show, NULL);
         ovsthread_once_done(&once);
     }
 }
