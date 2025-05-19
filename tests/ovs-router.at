@@ -39,6 +39,7 @@ AT_CHECK([ovs-appctl --format=json --pretty ovs/route/show], [0], [dnl
     "prefix": 24,
     "prefsrc": "2.2.2.2",
     "priority": 184,
+    "table": 254,
     "user": false},
   {
     "dst": "1.1.1.0",
@@ -50,6 +51,7 @@ AT_CHECK([ovs-appctl --format=json --pretty ovs/route/show], [0], [dnl
     "prefix": 24,
     "prefsrc": "2.2.2.2",
     "priority": 152,
+    "table": 254,
     "user": true},
   {
     "dst": "1.1.2.0",
@@ -62,6 +64,7 @@ AT_CHECK([ovs-appctl --format=json --pretty ovs/route/show], [0], [dnl
     "prefix": 24,
     "prefsrc": "2.2.2.2",
     "priority": 152,
+    "table": 254,
     "user": true},
   {
     "dst": "2.2.2.3",
@@ -73,6 +76,7 @@ AT_CHECK([ovs-appctl --format=json --pretty ovs/route/show], [0], [dnl
     "prefix": 32,
     "prefsrc": "2.2.2.2",
     "priority": 160,
+    "table": 254,
     "user": true}]]
 ])
 OVS_VSWITCHD_STOP

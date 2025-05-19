@@ -641,22 +641,15 @@ ovs_router_del(struct unixctl_conn *conn, int argc OVS_UNUSED,
 }
 
 static void
-ovs_router_show_json(struct json **routes)
+ovs_router_show_json(struct json **json_entries, const struct classifier *cls,
+                     uint32_t table)
 {
-    int n_rules = classifier_count(&default_cls);
-    struct json **json_entries = NULL;
+    int n_rules = classifier_count(cls);
+    struct ds ds = DS_EMPTY_INITIALIZER;
     struct ovs_router_entry *rt;
-    struct ds ds;
     int i = 0;
 
-    if (!n_rules) {
-        goto out;
-    }
-
-    json_entries = xmalloc(n_rules * sizeof *json_entries);
-    ds_init(&ds);
-
-    CLS_FOR_EACH (rt, cr, &default_cls) {
+    CLS_FOR_EACH (rt, cr, cls) {
         bool user = rt->priority != rt->plen && !rt->local;
         uint8_t plen = rt->plen;
         struct json *json, *nh;
@@ -672,6 +665,7 @@ ovs_router_show_json(struct json **routes)
             plen -= 96;
         }
 
+        json_object_put(json, "table", json_integer_create(table));
         json_object_put(json, "user", json_boolean_create(user));
         json_object_put(json, "local", json_boolean_create(rt->local));
         json_object_put(json, "priority", json_integer_create(rt->priority));
@@ -701,18 +695,23 @@ ovs_router_show_json(struct json **routes)
     }
 
     ds_destroy(&ds);
-
-out:
-    *routes = json_array_create(json_entries, i);
 }
 
 static void
-ovs_router_show_text(struct ds *ds)
+ovs_router_show_text(struct ds *ds, const struct classifier *cls,
+                     uint32_t table, bool show_header)
 {
     struct ovs_router_entry *rt;
 
-    ds_put_format(ds, "Route Table:\n");
-    CLS_FOR_EACH (rt, cr, &default_cls) {
+    if (show_header) {
+        if (ovs_router_is_standard_table_id(table)) {
+            ds_put_format(ds, "Route Table:\n");
+        } else {
+            ds_put_format(ds, "Route Table #%u:\n", table);
+        }
+    }
+
+    CLS_FOR_EACH (rt, cr, cls) {
         uint8_t plen;
         if (rt->priority == rt->plen || rt->local) {
             ds_put_format(ds, "Cached: ");
@@ -739,6 +738,9 @@ ovs_router_show_text(struct ds *ds)
         if (rt->local) {
             ds_put_format(ds, " local");
         }
+        if (!ovs_router_is_standard_table_id(table) && !show_header) {
+            ds_put_format(ds, " table %u", table);
+        }
         ds_put_format(ds, "\n");
     }
 }
@@ -747,15 +749,77 @@ static void
 ovs_router_show(struct unixctl_conn *conn, int argc OVS_UNUSED,
                const char *argv[] OVS_UNUSED, void *aux OVS_UNUSED)
 {
-    if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
-        struct json *routes;
+    struct classifier *cls = &default_cls;
+    struct ds ds = DS_EMPTY_INITIALIZER;
+    uint32_t table = CLS_DEFAULT;
 
-        ovs_router_show_json(&routes);
+    if (argc > 1) {
+        if (!strcmp(argv[1], "table=all")) {
+            table = CLS_ALL;
+        } else if (!ovs_scan(argv[1], "table=%"SCNi32, &table)) {
+            unixctl_command_reply_error(conn, "Invalid table format");
+            return;
+        }
+    }
+
+    if (table != CLS_ALL) {
+        cls = cls_find(table);
+        if (!cls) {
+            ds_put_format(&ds, "Invalid param, table '%s' not found", argv[1]);
+            unixctl_command_reply_error(conn, ds_cstr_ro(&ds));
+            ds_destroy(&ds);
+            return;
+        }
+    }
+
+    if (unixctl_command_get_output_format(conn) == UNIXCTL_OUTPUT_FMT_JSON) {
+        struct json *routes, **json_entries = NULL;
+        size_t num_routes = 0;
+
+        if (table == CLS_ALL) {
+            struct json **cls_entries;
+            struct clsmap_node *node;
+
+            ovs_mutex_lock(&mutex);
+
+            HMAP_FOR_EACH (node, hash_node, &clsmap) {
+                num_routes += node->cls.n_rules;
+            }
+
+            num_routes += default_cls.n_rules;
+            json_entries = xzalloc(num_routes * sizeof *json_entries);
+            cls_entries = json_entries;
+
+            HMAP_FOR_EACH (node, hash_node, &clsmap) {
+                ovs_router_show_json(cls_entries, &node->cls, node->table);
+                cls_entries += node->cls.n_rules;
+            }
+            ovs_router_show_json(cls_entries, &default_cls, CLS_DEFAULT);
+
+            ovs_mutex_unlock(&mutex);
+        } else {
+            if (cls->n_rules) {
+                num_routes = cls->n_rules;
+                json_entries = xmalloc(num_routes * sizeof *json_entries);
+                ovs_router_show_json(json_entries, cls, table);
+            }
+        }
+
+        routes = json_array_create(json_entries, num_routes);
         unixctl_command_reply_json(conn, routes);
     } else {
-        struct ds ds = DS_EMPTY_INITIALIZER;
+        if (table == CLS_ALL) {
+            struct clsmap_node *node;
 
-        ovs_router_show_text(&ds);
+            ovs_mutex_lock(&mutex);
+            HMAP_FOR_EACH (node, hash_node, &clsmap) {
+                ovs_router_show_text(&ds, &node->cls, node->table, false);
+            }
+            ovs_mutex_unlock(&mutex);
+            ovs_router_show_text(&ds, &default_cls, CLS_DEFAULT, false);
+        } else {
+            ovs_router_show_text(&ds, cls, table, true);
+        }
         unixctl_command_reply(conn, ds_cstr(&ds));
         ds_destroy(&ds);
     }
@@ -894,7 +958,7 @@ ovs_router_init(void)
                                  "ip/plen dev [gw] "
                                  "[pkt_mark=mark] [src=src_ip]",
                                  2, 5, ovs_router_add, NULL);
-        unixctl_command_register("ovs/route/show", "", 0, 0,
+        unixctl_command_register("ovs/route/show", "[table=ID|all]", 0, 1,
                                  ovs_router_show, NULL);
         unixctl_command_register("ovs/route/del", "ip/plen "
                                  "[pkt_mark=mark]", 1, 2, ovs_router_del,

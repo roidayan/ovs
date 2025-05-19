@@ -14,6 +14,8 @@ Post-v3.5.0
        core file size.
    - ovs-appctl:
      * Added JSON output support to the 'ovs/route/show' command.
+     * 'ovs/route/show': added new option, table=[ID|all], to list routes from
+       a specific OVS table or all routes from all tables.
    - SSL/TLS:
      * Support for deprecated TLSv1 and TLSv1.1 protocols on OpenFlow and
        database connections is now removed.
