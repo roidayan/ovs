@@ -488,7 +488,7 @@ rt_entry_delete__(const struct cls_rule *cr, struct classifier *cls)
 }
 
 static bool
-rt_entry_delete(uint32_t mark, uint8_t priority,
+rt_entry_delete(struct classifier *cls, uint32_t mark, uint8_t priority,
                 const struct in6_addr *ip6_dst, uint8_t plen)
 {
     const struct cls_rule *cr;
@@ -501,10 +501,10 @@ rt_entry_delete(uint32_t mark, uint8_t priority,
     cls_rule_init(&rule, &match, priority);
 
     /* Find the exact rule. */
-    cr = classifier_find_rule_exactly(&default_cls, &rule, OVS_VERSION_MAX);
+    cr = classifier_find_rule_exactly(cls, &rule, OVS_VERSION_MAX);
     if (cr) {
         ovs_mutex_lock(&mutex);
-        rt_entry_delete__(cr, &default_cls);
+        rt_entry_delete__(cr, cls);
         ovs_mutex_unlock(&mutex);
 
         res = true;
@@ -543,6 +543,7 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
     struct in6_addr src6 = in6addr_any;
     struct in6_addr gw6 = in6addr_any;
     char src6_s[IPV6_SCAN_LEN + 1];
+    uint32_t table = CLS_DEFAULT;
     struct in6_addr ip6;
     uint32_t mark = 0;
     unsigned int plen;
@@ -588,6 +589,23 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
             }
         }
 
+        if (ovs_scan(argv[i], "table=%"SCNi32, &table)) {
+            struct classifier *cls = cls_find(table);
+
+            if (!cls) {
+                struct ds ds = DS_EMPTY_INITIALIZER;
+
+                ds_put_format(&ds, "Table %s not found", argv[i]);
+                unixctl_command_reply_error(conn, ds_cstr_ro(&ds));
+                ds_destroy(&ds);
+                return;
+            }
+            continue;
+        } else if (ovs_scan(argv[i], "table=")) {
+            unixctl_command_reply_error(conn, "Invalid table format");
+            return;
+        }
+
         unixctl_command_reply_error(conn,
                                     "Invalid pkt_mark, IP gateway or src_ip");
         return;
@@ -600,7 +618,7 @@ ovs_router_add(struct unixctl_conn *conn, int argc,
         in6_addr_set_mapped_ipv4(&src6, src);
     }
 
-    err = ovs_router_insert__(CLS_DEFAULT, mark, plen + 32, false, &ip6, plen,
+    err = ovs_router_insert__(table, mark, plen + 32, false, &ip6, plen,
                               argv[2], &gw6, &src6);
     if (err) {
         unixctl_command_reply_error(conn, "Error while inserting route.");
@@ -613,10 +631,13 @@ static void
 ovs_router_del(struct unixctl_conn *conn, int argc OVS_UNUSED,
               const char *argv[], void *aux OVS_UNUSED)
 {
+    struct classifier *cls = &default_cls;
+    uint32_t table = CLS_DEFAULT;
     struct in6_addr ip6;
     uint32_t mark = 0;
     unsigned int plen;
     ovs_be32 ip;
+    int i;
 
     if (scan_ipv4_route(argv[1], &ip, &plen)) {
         in6_addr_set_mapped_ipv4(&ip6, ip);
@@ -625,14 +646,34 @@ ovs_router_del(struct unixctl_conn *conn, int argc OVS_UNUSED,
         unixctl_command_reply_error(conn, "Invalid parameters");
         return;
     }
-    if (argc > 2) {
-        if (!ovs_scan(argv[2], "pkt_mark=%"SCNi32, &mark)) {
-            unixctl_command_reply_error(conn, "Invalid pkt_mark");
+
+    /* Parse optional parameters. */
+    for (i = 2; i < argc; i++) {
+        if (ovs_scan(argv[i], "pkt_mark=%"SCNi32, &mark)) {
+            continue;
+        }
+
+        if (ovs_scan(argv[i], "table=%"SCNi32, &table)) {
+            cls = cls_find(table);
+            if (!cls) {
+                struct ds ds = DS_EMPTY_INITIALIZER;
+
+                ds_put_format(&ds, "Table %s not found", argv[i]);
+                unixctl_command_reply_error(conn, ds_cstr_ro(&ds));
+                ds_destroy(&ds);
+                return;
+            }
+            continue;
+        } else if (ovs_scan(argv[i], "table=")) {
+            unixctl_command_reply_error(conn, "Invalid table format");
             return;
         }
+
+        unixctl_command_reply_error(conn, "Invalid pkt_mark or table");
+        return;
     }
 
-    if (rt_entry_delete(mark, plen + 32, &ip6, plen)) {
+    if (rt_entry_delete(cls, mark, plen + 32, &ip6, plen)) {
         unixctl_command_reply(conn, "OK");
         seq_change(tnl_conf_seq);
     } else {
@@ -1027,13 +1068,13 @@ ovs_router_init(void)
         fatal_signal_add_hook(ovs_router_flush_handler, NULL, NULL, true);
         unixctl_command_register("ovs/route/add",
                                  "ip/plen dev [gw] "
-                                 "[pkt_mark=mark] [src=src_ip]",
-                                 2, 5, ovs_router_add, NULL);
+                                 "[pkt_mark=mark] [src=src_ip] [table=id]",
+                                 2, 6, ovs_router_add, NULL);
         unixctl_command_register("ovs/route/show", "[table=ID|all]", 0, 1,
                                  ovs_router_show, NULL);
         unixctl_command_register("ovs/route/del", "ip/plen "
-                                 "[pkt_mark=mark]", 1, 2, ovs_router_del,
-                                 NULL);
+                                 "[pkt_mark=mark] [table=id]", 1, 3,
+                                 ovs_router_del, NULL);
         unixctl_command_register("ovs/route/lookup", "ip_addr "
                                  "[pkt_mark=mark]", 1, 2,
                                  ovs_router_lookup_cmd, NULL);
