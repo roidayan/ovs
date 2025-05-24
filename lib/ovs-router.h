@@ -29,6 +29,15 @@
 extern "C" {
 #endif
 
+enum {
+#ifdef HAVE_NETLINK
+    CLS_DEFAULT = RT_TABLE_MAIN,
+#else
+    CLS_DEFAULT = 254, /* RT_TABLE_MAIN */
+#endif
+    CLS_ALL = UINT_MAX,
+};
+
 #ifdef HAVE_NETLINK
 static inline bool ovs_router_is_standard_table_id(uint32_t table_id)
 {
@@ -37,17 +46,24 @@ static inline bool ovs_router_is_standard_table_id(uint32_t table_id)
            || table_id == RT_TABLE_MAIN
            || table_id == RT_TABLE_LOCAL;
 }
+#else
+static inline bool ovs_router_is_standard_table_id(uint32_t table_id)
+{
+    return !table_id || table_id == CLS_DEFAULT;
+}
 #endif
 
 bool ovs_router_lookup(uint32_t mark, const struct in6_addr *ip_dst,
                        char output_netdev[],
                        struct in6_addr *src, struct in6_addr *gw);
 void ovs_router_init(void);
-void ovs_router_insert(uint32_t mark, const struct in6_addr *ip_dst,
+void ovs_router_insert(uint32_t table, uint32_t mark,
+                       const struct in6_addr *ip_dst,
                        uint8_t plen, bool local,
                        const char output_netdev[], const struct in6_addr *gw,
                        const struct in6_addr *prefsrc);
-void ovs_router_force_insert(uint32_t mark, const struct in6_addr *ip_dst,
+void ovs_router_force_insert(uint32_t table, uint32_t mark,
+                             const struct in6_addr *ip_dst,
                              uint8_t plen, bool local,
                              const char output_netdev[],
                              const struct in6_addr *gw,

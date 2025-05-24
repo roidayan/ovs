@@ -2238,8 +2238,8 @@ netdev_dummy_ip4addr(struct unixctl_conn *conn, int argc OVS_UNUSED,
 
             /* Insert local route entry for the new address. */
             in6_addr_set_mapped_ipv4(&ip6, ip.s_addr);
-            ovs_router_force_insert(0, &ip6, plen + 96, true, argv[1],
-                                    &in6addr_any, &ip6);
+            ovs_router_force_insert(CLS_DEFAULT, 0, &ip6, plen + 96, true,
+                                    argv[1], &in6addr_any, &ip6);
 
             unixctl_command_reply(conn, "OK");
         } else {
@@ -2272,7 +2272,7 @@ netdev_dummy_ip6addr(struct unixctl_conn *conn, int argc OVS_UNUSED,
             netdev_dummy_add_in6(netdev, &ip6, &mask);
 
             /* Insert local route entry for the new address. */
-            ovs_router_force_insert(0, &ip6, plen, true, argv[1],
+            ovs_router_force_insert(CLS_DEFAULT, 0, &ip6, plen, true, argv[1],
                                     &in6addr_any, &ip6);
 
             unixctl_command_reply(conn, "OK");
