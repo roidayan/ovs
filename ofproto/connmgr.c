@@ -1406,7 +1406,7 @@ ofconn_log_flow_mods(struct ofconn *ofconn)
         s.length -= 2;
         ds_put_char(&s, ')');
 
-        VLOG_INFO("%s: %s", rconn_get_name(ofconn->rconn), ds_cstr(&s));
+        VLOG_DBG("%s: %s", rconn_get_name(ofconn->rconn), ds_cstr(&s));
         ds_destroy(&s);
 
         ofconn->n_add = ofconn->n_delete = ofconn->n_modify = 0;
