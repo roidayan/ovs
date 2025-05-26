@@ -56,11 +56,25 @@ struct clsmap_node {
     uint32_t table;
 };
 
+struct router_rule {
+    struct rculist node;
+    uint32_t prio;
+    bool invert;
+    uint8_t src_len;
+    struct in6_addr from_addr;
+    uint32_t lookup_table;
+};
+
 static struct vlog_rate_limit rl = VLOG_RATE_LIMIT_INIT(1, 5);
 
 static struct ovs_mutex mutex = OVS_MUTEX_INITIALIZER;
 static struct hmap clsmap = HMAP_INITIALIZER(&clsmap);
 static struct classifier default_cls;
+
+static struct router_rule rules = {
+    .node = RCUOVS_LIST_INITIALIZER(&rules.node)
+};
+static bool rules_have_from_all;
 
 /* By default, use the system routing table.  For system-independent testing,
  * the unit tests disable using the system routing table. */
@@ -131,6 +145,14 @@ cls_destroy(struct classifier *cls)
     classifier_publish(cls);
 }
 
+bool
+ovs_router_is_empty(uint32_t table)
+{
+    struct classifier *cls = cls_find(table);
+
+    return !cls || !cls->n_rules;
+}
+
 static struct ovs_router_entry *
 ovs_router_entry_cast(const struct cls_rule *cr)
 {
@@ -170,10 +192,49 @@ ovs_router_lookup(uint32_t mark, const struct in6_addr *ip6_dst,
                   char output_netdev[],
                   struct in6_addr *src, struct in6_addr *gw)
 {
-    const struct cls_rule *cr;
     struct flow flow = {.ipv6_dst = *ip6_dst, .pkt_mark = mark};
+    const struct cls_rule *cr;
+    struct router_rule *rule;
+    bool match_found = false;
 
-    if (src && ipv6_addr_is_set(src)) {
+    if (rules_have_from_all || (src && ipv6_addr_is_set(src))) {
+        const struct in6_addr *from_src = src;
+
+        if (rules_have_from_all && !from_src) {
+            from_src = &in6addr_any;
+        }
+
+        /* Rules list is always sorted by router_rule::prio so here it is
+         * traversed starting from the higher priority rules first. */
+        RCULIST_FOR_EACH (rule, node, &rules.node) {
+            bool matched = !!(!rule->src_len ||
+                              ipv6_addr_equals_masked(&rule->from_addr,
+                                                      from_src, rule->src_len)
+                             );
+
+            if (rule->invert) {
+                matched = !matched;
+            }
+
+            if (matched) {
+                struct classifier *cls = cls_find(rule->lookup_table);
+
+                if (!cls) {
+                    VLOG_WARN_RL(&rl, "rule %u: route table %u not found",
+                                 rule->prio, rule->lookup_table);
+                    continue;
+                }
+                cr = classifier_lookup(cls, OVS_VERSION_MAX, &flow, NULL,
+                                       NULL);
+                if (cr) {
+                    match_found = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (!match_found && src && ipv6_addr_is_set(src)) {
         const struct cls_rule *cr_src;
         struct flow flow_src = {.ipv6_dst = *src, .pkt_mark = mark};
 
@@ -189,7 +250,11 @@ ovs_router_lookup(uint32_t mark, const struct in6_addr *ip6_dst,
         }
     }
 
-    cr = classifier_lookup(&default_cls, OVS_VERSION_MAX, &flow, NULL, NULL);
+    if (!match_found) {
+        cr = classifier_lookup(&default_cls, OVS_VERSION_MAX, &flow, NULL,
+                               NULL);
+    }
+
     if (cr) {
         struct ovs_router_entry *p = ovs_router_entry_cast(cr);
 
@@ -749,15 +814,68 @@ ovs_router_flush(void)
     seq_change(tnl_conf_seq);
 }
 
+void
+ovs_router_rules_flush(void)
+{
+    struct router_rule *rule;
+
+    rules_have_from_all = false;
+    ovsrcu_quiesce();
+
+    RCULIST_FOR_EACH_SAFE_PROTECTED (rule, node, &rules.node) {
+        rculist_remove(&rule->node);
+        ovsrcu_postpone(free, rule);
+    }
+}
+
 static void
 ovs_router_flush_handler(void *aux OVS_UNUSED)
 {
+    ovs_router_rules_flush();
     ovs_router_flush();
 
     ovs_mutex_lock(&mutex);
     hmap_destroy(&clsmap);
     hmap_init(&clsmap);
     ovs_mutex_unlock(&mutex);
+}
+
+bool
+ovs_router_is_referenced(uint32_t table)
+{
+    struct router_rule *rule;
+
+    if (ovs_router_is_standard_table_id(table)) {
+        return true;
+    }
+
+    RCULIST_FOR_EACH (rule, node, &rules.node) {
+        if (rule->lookup_table == table) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void
+ovs_router_add_rule(uint32_t prio, bool invert, uint8_t src_len,
+                    const struct in6_addr *from, uint32_t lookup_table)
+{
+    struct router_rule *rule = xzalloc(sizeof *rule);
+
+    rculist_init(&rule->node);
+
+    rule->prio = prio;
+    rule->invert = invert;
+    rule->src_len = src_len;
+    rule->from_addr = *from;
+    rule->lookup_table = lookup_table;
+
+    rculist_push_back(&rules.node, &rule->node);
+
+    if (!src_len && !rules_have_from_all) {
+        rules_have_from_all = true;
+    }
 }
 
 void
@@ -769,6 +887,7 @@ ovs_router_init(void)
         ovs_mutex_lock(&mutex);
         hmap_init(&clsmap);
         classifier_init(&default_cls, NULL);
+        rculist_init(&rules.node);
         ovs_mutex_unlock(&mutex);
         fatal_signal_add_hook(ovs_router_flush_handler, NULL, NULL, true);
         unixctl_command_register("ovs/route/add",
