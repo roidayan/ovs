@@ -45,6 +45,9 @@
  * old headers.  (We can't test for it with #ifdef because it's an enum.) */
 #define RTA_MARK 16
 
+#define ROUTE_TABLE_RESET_BACKOFF_MIN 1
+#define ROUTE_TABLE_RESET_BACKOFF_MAX 32
+
 VLOG_DEFINE_THIS_MODULE(route_table);
 
 COVERAGE_DEFINE(route_table_dump);
@@ -66,6 +69,7 @@ static struct nln_notifier *name_notifier = NULL;
 
 static bool route_table_valid = false;
 static bool rules_valid = false;
+static long long route_table_reset_last_ms;
 
 static int route_nln_parse(struct ofpbuf *, void *change);
 
@@ -119,6 +123,8 @@ route_table_init(void)
     ovs_assert(!rule_notifier);
     ovs_assert(!rule6_notifier);
 
+    route_table_reset_last_ms = time_msec();
+
     ovs_router_init();
     nln = nln_create(NETLINK_ROUTE, route_nln_parse, &nln_rtmsg_change);
 
@@ -147,15 +153,51 @@ void
 route_table_run(void)
     OVS_EXCLUDED(route_table_mutex)
 {
+    static uint64_t backoff = ROUTE_TABLE_RESET_BACKOFF_MIN;
+    static long long last_reset_duration_ms = 1;
+    static long long last_backoff_ms;
+
     ovs_mutex_lock(&route_table_mutex);
     if (nln) {
+        long long prev_reset_duration_ms = last_reset_duration_ms;
+        long long ms_since_backoff;
+        long long ms_since_reset;
+
         rtnetlink_run();
         nln_run(nln);
 
+        ms_since_reset = time_msec() - route_table_reset_last_ms;
         if (!route_table_valid || !rules_valid) {
+            struct timeval start, end;
+
+            if (ms_since_reset < backoff * last_reset_duration_ms) {
+                goto out;
+            }
+
+            if (ms_since_reset < 2 * backoff * last_reset_duration_ms) {
+                if (backoff < ROUTE_TABLE_RESET_BACKOFF_MAX) {
+                    last_backoff_ms = time_msec();
+                    backoff <<= 1;
+                }
+            }
+
+            xgettimeofday(&start);
             route_table_reset();
+            xgettimeofday(&end);
+
+            last_reset_duration_ms =
+                timeval_to_msec(&end) - timeval_to_msec(&start);
+        }
+
+        ms_since_backoff = time_msec() - last_backoff_ms ;
+        if (ms_since_backoff > 2 * backoff * prev_reset_duration_ms) {
+            if (backoff > ROUTE_TABLE_RESET_BACKOFF_MIN) {
+                last_backoff_ms = time_msec();
+                backoff >>= 1;
+            }
         }
     }
+out:
     ovs_mutex_unlock(&route_table_mutex);
 }
 
@@ -276,6 +318,7 @@ route_table_reset(void)
         }
     }
     rules_dump();
+    route_table_reset_last_ms = time_msec();
 }
 
 static void
