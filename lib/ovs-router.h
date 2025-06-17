@@ -19,11 +19,24 @@
 
 #include <sys/types.h>
 #include <netinet/in.h>
+#ifdef HAVE_NETLINK
+#include <linux/rtnetlink.h>
+#endif
 
 #include "util.h"
 
 #ifdef  __cplusplus
 extern "C" {
+#endif
+
+#ifdef HAVE_NETLINK
+static inline bool ovs_router_is_standard_table_id(uint32_t table_id)
+{
+    return !table_id
+           || table_id == RT_TABLE_DEFAULT
+           || table_id == RT_TABLE_MAIN
+           || table_id == RT_TABLE_LOCAL;
+}
 #endif
 
 bool ovs_router_lookup(uint32_t mark, const struct in6_addr *ip_dst,

@@ -519,21 +519,12 @@ route_table_parse(struct ofpbuf *buf, void *change)
                                nlmsg, rtm, NULL, change);
 }
 
-static bool
-is_standard_table_id(uint32_t table_id)
-{
-    return !table_id
-           || table_id == RT_TABLE_DEFAULT
-           || table_id == RT_TABLE_MAIN
-           || table_id == RT_TABLE_LOCAL;
-}
-
 static void
 route_table_change(struct route_table_msg *change, void *aux OVS_UNUSED)
 {
     if (!change
         || (change->relevant
-            && is_standard_table_id(change->rd.rta_table_id))) {
+            && ovs_router_is_standard_table_id(change->rd.rta_table_id))) {
         route_table_valid = false;
     }
     if (change) {
