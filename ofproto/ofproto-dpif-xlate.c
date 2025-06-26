@@ -4998,13 +4998,16 @@ pick_dp_hash_select_group(struct xlate_ctx *ctx, struct group_dpif *group)
          * are quasi-randomly spread over the hash values, this maintains
          * a distribution according to bucket weights even when some buckets
          * are non-live. */
+        ovs_rwlock_rdlock(&group->hash_map_rwlock);
         for (int i = 0; i <= hash_mask; i++) {
             struct ofputil_bucket *b =
                     group->hash_map[(dp_hash + i) & hash_mask];
             if (bucket_is_alive(ctx, group, b, 0)) {
+                ovs_rwlock_unlock(&group->hash_map_rwlock);
                 return b;
             }
         }
+        ovs_rwlock_unlock(&group->hash_map_rwlock);
 
         return NULL;
     }

@@ -5301,6 +5301,7 @@ group_dpif_credit_stats(struct group_dpif *group,
 
 static bool
 group_setup_dp_hash_table(struct group_dpif *group, size_t max_hash)
+    OVS_REQ_WRLOCK(group->hash_map_rwlock)
 {
     struct ofputil_bucket *bucket;
     uint32_t n_buckets = group->up.n_buckets;
@@ -5388,6 +5389,7 @@ group_setup_dp_hash_table(struct group_dpif *group, size_t max_hash)
 
 static void
 group_set_selection_method(struct group_dpif *group)
+    OVS_REQ_WRLOCK(group->hash_map_rwlock)
 {
     const struct ofputil_group_props *props = &group->up.props;
     const char *selection_method = props->selection_method;
@@ -5456,11 +5458,14 @@ group_construct(struct ofgroup *group_)
     ovs_mutex_init_adaptive(&group->stats_mutex);
     ovs_mutex_lock(&group->stats_mutex);
     group_construct_stats(group);
+    ovs_rwlock_init(&group->hash_map_rwlock);
+    ovs_rwlock_wrlock(&group->hash_map_rwlock);
     group->hash_map = NULL;
     if (group->up.type == OFPGT11_SELECT) {
         VLOG_DBG("Constructing select group %"PRIu32, group->up.group_id);
         group_set_selection_method(group);
     }
+    ovs_rwlock_unlock(&group->hash_map_rwlock);
     ovs_mutex_unlock(&group->stats_mutex);
     return 0;
 }
@@ -5469,7 +5474,9 @@ static void
 group_destruct(struct ofgroup *group_)
 {
     struct group_dpif *group = group_dpif_cast(group_);
+
     ovs_mutex_destroy(&group->stats_mutex);
+    ovs_rwlock_destroy(&group->hash_map_rwlock);
     if (group->hash_map) {
         free(group->hash_map);
         group->hash_map = NULL;
@@ -5481,6 +5488,7 @@ group_modify(struct ofgroup *group_)
 {
     struct group_dpif *group = group_dpif_cast(group_);
 
+    ovs_rwlock_wrlock(&group->hash_map_rwlock);
     if (group->hash_map) {
         free(group->hash_map);
         group->hash_map = NULL;
@@ -5489,6 +5497,7 @@ group_modify(struct ofgroup *group_)
         VLOG_DBG("Modifying select group %"PRIu32, group->up.group_id);
         group_set_selection_method(group);
     }
+    ovs_rwlock_unlock(&group->hash_map_rwlock);
 }
 
 static enum ofperr

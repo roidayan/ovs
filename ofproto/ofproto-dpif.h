@@ -142,6 +142,7 @@ struct group_dpif {
     enum ovs_hash_alg hash_alg;         /* dp_hash algorithm to be applied. */
     uint32_t hash_basis;                /* Basis for dp_hash. */
     uint32_t hash_mask;                 /* Used to mask dp_hash (2^N - 1).*/
+    struct ovs_rwlock hash_map_rwlock;
     struct ofputil_bucket **hash_map;   /* Map hash values to buckets. */
 };
 
